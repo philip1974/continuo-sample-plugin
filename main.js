@@ -3,10 +3,10 @@
 // 安装:把整个目录拷到 ${userData}/plugins/com.example.sample/,
 // 重启 LM,Settings → 插件 → 启用 'Sample Plugin'。
 //
-// SDK 入口:LM 把 Plugin 基类 + React 暴露在 globalThis.lm 上(M-Plugin v4.1)。
+// SDK 入口:LM 把 Plugin 基类 + React 暴露在 globalThis.co 上(M-Plugin v4.1)。
 // 解构出来后写起来跟 ESM import 一样自然。
 
-const { Plugin, React } = globalThis.lm;
+const { Plugin, React, PermissionError } = globalThis.co;
 const h = React.createElement;
 
 export default class SamplePlugin extends Plugin {
@@ -104,6 +104,49 @@ export default class SamplePlugin extends Plugin {
       // 上次启动信息可用,演示 loadData 回路
     }
     await this.saveData({ lastLoadedAt: Date.now() });
+
+    // ── 9. v5 Phase 3 demo:runtime gating ────────────
+    // manifest 声明 fs+network,用户授哪些就调哪些;未授调用抛
+    // PermissionError,plugin 必须 try/catch 优雅降级。
+    this.addCommand({
+      id: 'sample.read-tmp',
+      title: 'Sample: 读 /tmp 目录(需 fs)',
+      fn: async () => {
+        try {
+          const entries = await this.app.fs.listDir('/tmp');
+          alert(`/tmp 共 ${entries.length} 项(前 3:${entries
+            .slice(0, 3)
+            .map((e) => e.name)
+            .join(', ')})`);
+        } catch (err) {
+          if (err instanceof PermissionError) {
+            alert(`fs 权限未授,请在 Settings → 插件 → [权限] 编辑后重试`);
+          } else {
+            alert(`fs 调用失败:${err.message}`);
+          }
+        }
+      },
+    });
+
+    this.addCommand({
+      id: 'sample.fetch-zen',
+      title: 'Sample: 拉 GitHub Zen(需 network)',
+      fn: async () => {
+        try {
+          const r = await this.app.network.fetch(
+            'https://api.github.com/zen',
+          );
+          const text = await r.text();
+          alert(`GitHub Zen: ${text}`);
+        } catch (err) {
+          if (err instanceof PermissionError) {
+            alert(`network 权限未授,请在 Settings → 插件 → [权限] 编辑后重试`);
+          } else {
+            alert(`network 调用失败:${err.message}`);
+          }
+        }
+      },
+    });
   }
 
   // 父类 _deactivate 自动 LIFO 清理 disposables;此处可选 onunload 加业务卸载
